@@ -12,6 +12,12 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.api.middleware import (
+    RequestIDMiddleware,
+    RateLimitMiddleware,
+    error_handler_middleware,
+    logging_middleware,
+)
 from src.api.routes import detection, health, stats
 from src.database.connection import init_db
 from src.utils.config import get_settings
@@ -55,7 +61,8 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
 )
 
-# Add CORS middleware
+# Add middleware (order matters - first added = outermost)
+# 1. CORS (outermost - handles preflight requests)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -63,6 +70,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 2. Request ID tracking
+app.add_middleware(RequestIDMiddleware)
+
+# 3. Rate limiting (after request ID so limits are logged with ID)
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=60,
+    requests_per_hour=1000,
+)
+
+# 4. Request/Response logging (inner - logs after rate limiting)
+app.middleware("http")(logging_middleware)
+
+# 5. Error handling (innermost - catches all errors)
+app.middleware("http")(error_handler_middleware)
 
 # Include routers
 app.include_router(detection.router)

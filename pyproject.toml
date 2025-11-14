@@ -168,6 +168,13 @@ pythonpath = [
     "src"
 ]
 asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests (fast, isolated)",
+    "integration: Integration tests (with database/external dependencies)",
+    "e2e: End-to-end tests (full workflow scenarios)",
+    "slow: Tests that take significant time to run",
+    "performance: Performance and benchmark tests",
+]
 
 [tool.coverage.run]
 source = ["src"]
