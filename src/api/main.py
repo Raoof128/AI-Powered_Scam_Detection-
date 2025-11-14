@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.api.routes import detection, health, stats
+from src.database.connection import init_db
 from src.utils.config import get_settings
 from src.utils.logger import get_logger
 
@@ -26,8 +28,16 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
 
+    # Initialize database
+    try:
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+
     # TODO: Load ML models here
-    # app.state.model = load_model()
+    # app.state.detector = ScamDetector()
+    # logger.info("ML models loaded successfully")
 
     yield
 
@@ -54,6 +64,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include routers
+app.include_router(detection.router)
+app.include_router(health.router)
+app.include_router(stats.router)
+
 
 @app.get("/", tags=["Root"])
 async def root() -> Dict[str, str]:
@@ -61,53 +76,22 @@ async def root() -> Dict[str, str]:
     Root endpoint.
 
     Returns:
-        Welcome message
+        Welcome message with API information
     """
     return {
-        "message": "Scam Detection API",
+        "message": "🛡️ AI-Powered Scam Detection API",
         "version": settings.app_version,
-        "docs": "/docs" if settings.debug else "disabled in production"
+        "environment": settings.environment,
+        "docs": "/docs" if settings.debug else "disabled in production",
+        "endpoints": {
+            "detection": "/api/v1/detect",
+            "batch_detection": "/api/v1/detect/batch",
+            "feedback": "/api/v1/feedback",
+            "statistics": "/api/v1/stats/overview",
+            "health": "/health",
+        },
+        "description": "Real-time scam detection for Australian-specific threats",
     }
-
-
-@app.get("/health", tags=["Health"])
-async def health_check() -> Dict[str, str]:
-    """
-    Health check endpoint.
-
-    Returns:
-        Service health status
-    """
-    return {
-        "status": "healthy",
-        "service": settings.app_name,
-        "version": settings.app_version,
-        "environment": settings.environment
-    }
-
-
-@app.get("/ready", tags=["Health"])
-async def readiness_check() -> Dict[str, str]:
-    """
-    Readiness check endpoint.
-
-    Returns:
-        Service readiness status
-    """
-    # TODO: Check if models are loaded, database is accessible, etc.
-    return {
-        "status": "ready",
-        "models_loaded": False,  # TODO: Update when models are loaded
-        "database_connected": False,  # TODO: Update when DB is connected
-        "redis_connected": False,  # TODO: Update when Redis is connected
-    }
-
-
-# TODO: Add detection endpoints
-# @app.post("/api/v1/detect", tags=["Detection"])
-# async def detect_scam(request: DetectionRequest) -> DetectionResponse:
-#     """Detect if a message is a scam."""
-#     pass
 
 
 if __name__ == "__main__":
