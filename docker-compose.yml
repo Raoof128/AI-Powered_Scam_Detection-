@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: scamdetector-postgres
+    environment:
+      POSTGRES_USER: scamdetector
+      POSTGRES_PASSWORD: scamdetector_password
+      POSTGRES_DB: scamdetector
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scamdetector"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scamdetector-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: scamdetector-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - scamdetector-network
+
+  # FastAPI Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: scamdetector-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Application
+      APP_NAME: scam-detector
+      ENVIRONMENT: development
+      DEBUG: "true"
+
+      # Database
+      DATABASE_URL: postgresql://scamdetector:scamdetector_password@postgres:5432/scamdetector
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+
+      # API
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+
+      # Security
+      SECRET_KEY: dev-secret-key-change-in-production
+
+      # ML Models
+      MODEL_PATH: /app/data/models
+      CONFIDENCE_THRESHOLD: 0.75
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./notebooks:/app/notebooks
+    networks:
+      - scamdetector-network
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Jupyter Notebook (for development)
+  notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: scamdetector-notebook
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      DATABASE_URL: postgresql://scamdetector:scamdetector_password@postgres:5432/scamdetector
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+      - ./src:/app/src
+    networks:
+      - scamdetector-network
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+
+networks:
+  scamdetector-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
